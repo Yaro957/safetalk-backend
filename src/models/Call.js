@@ -9,6 +9,5 @@ const callSchema = new mongoose.Schema({
   transcript: { type: String },
 }, { timestamps: true });
 
-module.exports = mongoose.model('Call', callSchema);
-
-
+// Prevent OverwriteModelError on hot reloads/serverless
+module.exports = mongoose.models.Call || mongoose.model('Call', callSchema);
