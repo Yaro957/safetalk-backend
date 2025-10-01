@@ -6,27 +6,27 @@ const MAIL_HOST = process.env.MAIL_HOST;
 const MAIL_USER = process.env.MAIL_USER;
 const MAIL_PASS = process.env.MAIL_PASS;
 
-// Cache connection
+// ---------------------
+// MongoDB Connection
+// ---------------------
 let cached = global.__mongoose;
 if (!cached) {
   cached = global.__mongoose = { conn: null, promise: null };
 }
 
 async function connectToDatabase() {
-  if (cached.conn) {
-    return cached.conn;
-  }
-  
+  if (cached.conn) return cached.conn;
+
   if (!cached.promise) {
     cached.promise = mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 3000, // Reduced timeout
-      maxPoolSize: 1,
-      minPoolSize: 0,
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000, // safer for Vercel cold starts
+      maxPoolSize: 10,
       bufferCommands: false,
-      bufferMaxEntries: 0,
     });
   }
-  
+
   try {
     cached.conn = await cached.promise;
     return cached.conn;
@@ -36,30 +36,41 @@ async function connectToDatabase() {
   }
 }
 
-// Define schemas WITHOUT duplicate indexes
-const otpSchema = new mongoose.Schema({
-  email: { type: String, required: true, lowercase: true, index: true },
-  otp: { type: String, required: true },
-  expiresAt: { type: Date, required: true }, // NO index: true here
-}, { timestamps: true });
+// ---------------------
+// Schemas & Models
+// ---------------------
+const otpSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, lowercase: true, index: true },
+    otp: { type: String, required: true },
+    expiresAt: { type: Date, required: true },
+  },
+  { timestamps: true }
+);
 
-// Single TTL index definition
+// TTL index for OTP expiration
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true, index: true },
-}, { timestamps: true });
+const userSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, unique: true, lowercase: true, index: true },
+  },
+  { timestamps: true }
+);
 
-// Get models
+// Safe model compilation (avoids OverwriteModelError on hot reloads)
 const Otp = mongoose.models.Otp || mongoose.model('Otp', otpSchema);
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
+// ---------------------
+// Helpers
+// ---------------------
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 function createTransport() {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     host: MAIL_HOST,
     port: 587,
     secure: false,
@@ -67,6 +78,9 @@ function createTransport() {
   });
 }
 
+// ---------------------
+// API Handler
+// ---------------------
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -80,18 +94,18 @@ export default async function handler(req, res) {
 
     const normalizedEmail = String(email).toLowerCase();
 
-    // Connect to database with timeout
+    // Connect to DB
     try {
       await connectToDatabase();
     } catch (dbError) {
       console.error('Database connection failed:', dbError.message);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Database connection failed' 
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection failed',
       });
     }
 
-    // Check if user already exists
+    // Check if user exists
     const existing = await User.findOne({ email: normalizedEmail }).lean();
     if (existing) {
       return res.status(409).json({ success: false, message: 'Email already registered' });
@@ -104,7 +118,7 @@ export default async function handler(req, res) {
     await Otp.deleteMany({ email: normalizedEmail });
     await Otp.create({ email: normalizedEmail, otp: code, expiresAt });
 
-    // Send email using nodemailer
+    // Send Email
     try {
       const transporter = createTransport();
       await transporter.sendMail({
@@ -117,14 +131,13 @@ export default async function handler(req, res) {
       console.log('Email sent successfully');
     } catch (emailError) {
       console.error('Email sending failed:', emailError.message);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Failed to send email' 
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send email',
       });
     }
 
     return res.status(200).json({ success: true, message: 'OTP sent' });
-
   } catch (err) {
     console.error('Send OTP error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to send OTP' });
