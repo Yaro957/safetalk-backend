@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
-import sgMail from '@sendgrid/mail';
+import nodemailer from 'nodemailer';
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL;
+const MAIL_HOST = process.env.MAIL_HOST;
+const MAIL_USER = process.env.MAIL_USER;
+const MAIL_PASS = process.env.MAIL_PASS;
 
 // Cache connection
 let cached = global.__mongoose;
@@ -57,6 +58,15 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+function createTransport() {
+  return nodemailer.createTransporter({
+    host: MAIL_HOST,
+    port: 587,
+    secure: false,
+    auth: { user: MAIL_USER, pass: MAIL_PASS },
+  });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -94,15 +104,24 @@ export default async function handler(req, res) {
     await Otp.deleteMany({ email: normalizedEmail });
     await Otp.create({ email: normalizedEmail, otp: code, expiresAt });
 
-    // Send email
-    sgMail.setApiKey(SENDGRID_API_KEY);
-    await sgMail.send({
-      to: normalizedEmail,
-      from: FROM_EMAIL,
-      subject: 'Your SafeTalk OTP Code',
-      text: `Your OTP code is ${code}. It expires in 5 minutes.`,
-      html: `<p>Your OTP code is <strong>${code}</strong>. It expires in 5 minutes.</p>`,
-    });
+    // Send email using nodemailer
+    try {
+      const transporter = createTransport();
+      await transporter.sendMail({
+        from: MAIL_USER,
+        to: normalizedEmail,
+        subject: 'Your SafeTalk OTP Code',
+        text: `Your OTP code is ${code}. It expires in 5 minutes.`,
+        html: `<p>Your OTP code is <strong>${code}</strong>. It expires in 5 minutes.</p>`,
+      });
+      console.log('Email sent successfully');
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError.message);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to send email' 
+      });
+    }
 
     return res.status(200).json({ success: true, message: 'OTP sent' });
 
