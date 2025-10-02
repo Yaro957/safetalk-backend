@@ -72,7 +72,7 @@ function generateOtp() {
 function createTransport() {
   return nodemailer.createTransport({
     host: MAIL_HOST,
-    port:465,
+    port:443,
     secure:true,
     auth: { user: MAIL_USER, pass: MAIL_PASS },
   });
