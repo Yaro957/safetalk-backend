@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 4000;
   try {
     await connectToDatabase();
     const server = http.createServer(app);
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`Server listening on port ${PORT}`);
     });
   } catch (err) {
@@ -18,5 +18,3 @@ const PORT = process.env.PORT || 4000;
     process.exit(1);
   }
 })();
-
-
