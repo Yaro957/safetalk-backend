@@ -13,15 +13,22 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-function createTransport() {
-  return nodemailer.createTransport({
-    host: process.env.MAIL_HOST,
-    port: 587,
-    secure: false,
-    auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
-  });
-}
+// function createTransport() {
+//   return nodemailer.createTransport({
+//     host: process.env.MAIL_HOST,
+//     port: 587,
+//     secure: false,
+//     auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+//   });
+// }
 
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+  },
+});
 router.post("/send-otp", async (req, res) => {
   const { email } = req.body || {};
   if (!email) return res.status(400).json({ message: "Email required" });
@@ -35,9 +42,9 @@ router.post("/send-otp", async (req, res) => {
   const code = generateOtp();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
   await Otp.deleteMany({ email: normalizedEmail });
-  // await Otp.create({ email: normalizedEmail, otp: code, expiresAt });
+  await Otp.create({ email: normalizedEmail, otp: code, expiresAt });
   try {
-    const transporter = createTransport();
+    // const transporter = createTransport();
     await transporter.sendMail({
       from: process.env.MAIL_USER,
       to: normalizedEmail,
@@ -125,18 +132,16 @@ router.post("/register", async (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
-  res
-    .status(201)
-    .json({
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        isEmailVerified: user.isEmailVerified,
-      },
-    });
+  res.status(201).json({
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      isEmailVerified: user.isEmailVerified,
+    },
+  });
 });
 
 router.post("/login", async (req, res) => {
